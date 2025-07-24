@@ -1,0 +1,240 @@
+= Using CPM for package management
+In CMake you can use different package manager in order to fetch libraries or other package from the internet, CPM is one of them
+
+:toc:
+:sectnums:
+
+== Introduction
+In this article, we will talk about how we can include external libraries or package using CMake and some package for dependency management.
+
+It's a packet that is looking like FetchContent and the git submodules.
+
+CPM.cmake is a cross-platform CMake script that adds dependency management capabilities to CMake. It's built as a thin wrapper around CMake's link:https://cmake.org/cmake/help/latest/module/FetchContent.html[FetchContent] module that adds version control, caching, a simple API link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#comparison-to-pure-fetchcontent--externalproject[and more].
+
+=== Manage everything
+Any downloadable project or resource can be added as a version-controlled dependency throug CPM, it is not necessary to modify or package anything. Projects using modern CMake are automatically configured and their targets can be used immediately. For everything else, the targets can be created manually after the dependency has been downloaded (see the link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#snippets[snippet] below for examples).
+
+
+
+=== Full CMakeLists example
+```cmake
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+# create project
+project(MyProject)
+
+# add executable
+add_executable(main main.cpp)
+
+# add dependencies
+# Assuming you have a folder named cmake with file named CPM.cmake
+include(cmake/CPM.cmake)
+
+CPMAddPackage("gh:fmtlib/fmt#7.1.3")
+CPMAddPackage("gh:nlohmann/json@3.10.5")
+CPMAddPackage("gh:catchorg/Catch2@3.4.0")
+
+# link dependencies
+target_link_libraries(main fmt::fmt nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
+```
+
+Check out the link:https://github.com/cpm-cmake/CPM.cmake/tree/master/examples[examples directory] for complete examples with source code and check in the link:https://github.com/cpm-cmake/CPM.cmake/wiki/More-Snippets[wiki] for snippets example.
+
+=== Difference between FetchContent and CPM
+CPM is a wrapper for CMake's FetchContent module and adds a number of features that turn it into a useful dependency manager. The most notable features are:
+
+* A simpler to use API
+* Version checking: CPM will check the version number of any added dependency and emit a warning in case of another dependency requires a more recent version
+* Offline builds: CPM will override CMake's download ans update command, which allows new builds to be configured while offline if all dependencies are availables locally.
+* Automatic shallow clone: If a version tag (e.g v2.2.0) is provided and CPM_SOURCE_CACHE is used, CPM will perform a shallow clone of the dependency, which should be significantly faster while using less storage than a full clone.
+* Overridable: All CPMAddPackage can be configured to use `find_package()` by setting a link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#cpm_use_local_packages[CMake flag], making it easy to integrate into projectsthat may require local cersioning through the system's package manager.
+* link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#package-lock[Package lock files] for easier transitive dependency management.
+* Dependencies can be overridden link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#local-package-override[per-build] using CMake CLI parameters
+
+== Adding CPM
+To add CPM to your current project, simply add the link:https://github.com/cpm-cmake/CPM.cmake/releases/tag/v0.42.0[latest release] of `CPM.cmake` or `get_cpm.cmake` to your projec's `cmake` directory. The command below will perform this automatically.
+
+```bash
+$ mkdir -p cmake
+$ wget -O cmake/CPM.cmake https://github.com/cpm-cmake/CPM.cmake/releases/latest/download/get_cpm.cmake
+```
+
+Or you can also download `CPM.cmake` directly from your project's `CMakeLists.txt`. See the link:https://github.com/cpm-cmake/CPM.cmake/wiki/Downloading-CPM.cmake-in-CMake[wiki] for more details
+
+=== Usage
+After `CPM.cmake` has been link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#adding-cpm[added] to your project, the function `CPMAddPackage` can be used to fetch and configure a dependency. Afterwards, any targets defined in the dependency can be used directly. `CPMAddPackage` takes the following named parameters.
+
+```cmake
+CPMAddPackage(
+    NAME    # The unique name of the dependency (should be the exported target's name)
+    VERSION # The minimum version of the dependency (optional, 
+deaults to 0)
+    PATCHES # Patch files to be applied sequentially using patch 
+and PATCH_OPTIONS (optional)
+    OPTIONS # Configurations options passed to the dependency 
+(optional)
+    DOWNLOAD_ONLY # If set, the project is downloaded, but not 
+configured (optional)
+    [...]
+)
+```
+
+The origin may be specified by a `GIT_REPOSITORY`, but other sources, such as direct URLs are link:https://cmake.org/cmake/help/v3.11/module/ExternalProject.html#external-project-definition[also supported]. If `GIT_TAG` hasn't been explicitly specified it defaults to `v(VERSION)`, a common convention for git projects. On the other hand, if `VERSION` hasn't been explicitly specified, CPM can automatically identify the version from the git tag in some common cases. `GIT_TAG` can also be set to a specific commit or a branch name such as `master`, however this isn't recommended, as such packages will only be updated when the cache is cleared.
+
+NOTE: `PATCHES` takes a list of patch files to apply dequentially. For a basic example, see link:https://github.com/cpm-cmake/CPM.cmake/blob/master/examples/highway/CMakeLists.txt[Highway]. We recommend that if you use `PATCHES`, you also set `CPM_SOURCE_CACHE`.
+
+NOTE: If an additional optional parameter `EXCLUDE_FROM_ALL` is set to a truthy value, then any targets defined inside the dependency won't be built by default. See the link:https://cmake.org/cmake/help/latest/prop_tgt/EXCLUDE_FROM_ALL.html[CMake docs] for defails.
+
+NOTE: If an additional optional parameter `SYSTEM` is set to a truthy value, the SYSTEM directory property of the dubdirectory added will be set to true. See the link:https://cmake.org/cmake/help/latest/command/add_subdirectory.html[add_subdirectory] as well as link:https://cmake.org/cmake/help/latest/prop_tgt/SYSTEM.html#prop_tgt:SYSTEM[SYSTEM] target property for details.
+
+A shorthand syntax is also supported:
+
+```cmake
+# A git package from a given uri with a version
+CPMAddPackage("uri@version")
+# A git package from a given uri with a git tag or commit hash
+CPMAddPackage("uri#tag")
+# A git package with both version and tag provided
+CPMAddPackage("uri@version#tag")
+```
+
+. In the shorthand syntax if the URI is of the form `gh:user/name`, it is interpreted as GitHub URI where name is converted to `https://github.com/user/name.git`. 
+. If the URI is of the form `gl:user/name`, it is interpreted as a link:https://gitlab.com/explore/[GitLab] URI and converted to `https://gitlab.com/user/name.git`. 
+. If the URI is of the form `bb:user/name`, it is interpreted as a link:https://bitbucket.org/[BitBucket] URI and converted to `https://bitbucket.org/user/name.git`. 
+. Otherwise the URI used verbatim as a git URL. 
+
+NOTE: The single argument syntax also works for URLs:
+
+```cmake
+# An archive package from a given url. The version is inferred
+CPMAddPackage("https://example.com/my-package-1.2.3.zip")
+# An archive package from a given url with a MD5 hash provided
+CPMAddPackage("https://example.com/my-package-1.2.3.zip#MD5=68e20f674a48be38d60e129f600faf7d")
+# An archive package from agiven url. The version is explicitly given
+CPMAddPackage("https://example.com/my-package.zip@1.2.3")
+```
+
+Additionally, if needed, extra arguments can be provided while using single argument syntax by using the shorthand syntax with the `URI` specifier.
+
+```cmake
+CPMAddPackage(
+  URI "gh:nlohmann/json@3.9.1"
+  OPTIONS "JSON_BuildTests OFF"
+)
+```
+
+NOTE: The URI argument must be the first argument to `CPMAddPackage`. URI automatically sets `EXCLUDE_FROM_ALL` to `YES` and `SYSTEM` to `YES`. If this is not desired, `EXCLUDE_FROM_ALL` set it to `NO` and `SYSTEM` set it to `NO` can be set afterwards.
+
+NOTE: After calling `CPMAddPackage`, the following variables are defined in the local scope, where `<dependency>` is the name of the dependency.
+
+* `<dependency>_SOURCE_DIR` is the path to the source of the dependency.
+* `<dependency>_BINARY_DIR` is the path to the build directory of the dependency.
+* `<dependency>_ADDED` is set to `YES` if the dependency has not been added before, otherwise it is set to `NO`.
+* `CPM_LAST_PACKAGE_NAME` is set to the determined name of the last added dependency (equivalent to <dependency>).
+
+For using CPM.cmake projects with external package managers, such as conan or vcpkg, setting the variables link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#options[CPM_USE_LOCAL_PACKAGES] will make CPM.cmake try to add a package through `find_package` first, and add it from source if it doesn't succeed.
+
+In rare case, this behaviour may be desirable by default. The function `CPMFindPackage` will try to find a local dependency via CMake's `find_package` and fallback to `CPMAddPackage`, if the dependency isn't found.
+
+=== Updating CPM
+In order to update CPM to the newest version, update the script in the project's root directory, for example by running the same command as for link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#adding-cpm[adding CPM]. Dependencies using CPM will automatically use the updated script of the outermost project.
+
+=== Advantages
+
+* Small and reusable projects CPM takes care of all project dependencies, allowing developers to focus on creating small, well-tested libraries.
+* Cross-platform CPM adds projects directly at the configure stage and is compatible with all CMake toolchains as well as generators.
+* Reproducible builds by versioning dependencies via git commits or tags it is ensured that a project will always be buildable.
+* Recursive dependencies Endures that no dependency is added twice and all are added in the minimum required versions.
+* Plug-and-play No need to install anything. Just add the script to your project and you're good to go.
+* No packaging required Simply add all external sources as a dependency.
+* Simple source distribution CPM makes including projects with source files and dependencies easy, reducing the need for monolithic header files or git submodules.
+
+=== Limitations
+
+* No pre-built binaries For eavery new build directory, all dependencies are initially downloaded and built from scratch. To avoid extradownloads it is recommend to set the link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#CPM_SOURCE_CACHE[CPM_SOURCE_CACHE] environmental variable. Using a caching compiler such as link:https://github.com/TheLartians/Ccache.cmake[ccache] can drastically reduce buid time.
+* Dependent a good CMakeLists. Many libraries do not have CMakeLists that work well for subprojects. Luckily this is slowly changing, however, until then,  some manual configuration may be required (see the snippet link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#snippets[on github] for examples). For best practices on preparing projects for CPM, see the link:https://github.com/cpm-cmake/CPM.cmake/wiki/Preparing-projects-for-CPM.cmake[wiki]
+* First version used in diamond-shaped dependency graphs (e.g `A` depends n `C`@1.1 and `B`, which itself depends on `C`@1.2 the first added dependency will be used (in this case `C`@1.1). In this case, `B` requires a newer version of `C` than `A`, so CPM will emit a warning. This can be easily resolved by adding a new version of the dependency in the outermost project, or by introducing a link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#package-lock[package lock file].
+* Some *CMake* policies set to `NEW` Including CPM.cmake will lead to several CMake policies being set to `NEW`. Users which need the old behavior will need to manually modify their CMake code to ensure they're set to `OLD` at the appropriate places. The policies are as follows:
+
+** link:https://cmake.org/cmake/help/latest/policy/CMP0077.html[CPM0077] and link:https://cmake.org/cmake/help/latest/policy/CMP0126.html[CPM0126]. They make setting package options from `CPMAddPackage` possible
+
+** link:https://cmake.org/cmake/help/latest/policy/CMP0135.html[CPM0135] it allows for proper package rebuilds of package which are archives, source cache is not used, and the package URL is changed to an older version
+
+** link:https://cmake.org/cmake/help/latest/policy/CMP0150.html[CPM0150] Relative paths provided to `GIT_REPOSITORY` are treated as relative to the parent project's remote.
+
+For projects with more complex needs and whrere an extra setup step doesn't matter, it may be worth to check out an external C++ package manager such as link:https://github.com/microsoft/vcpkg[vcpkg], link:https://conan.io/[conan] or link:https://github.com/ruslo/hunter[hunter]. Dependencies added with `CPMFindPackage` should work with external package managers too. Additionally, the option link:https://github.com/cpm-cmake/CPM.cmake?tab=readme-ov-file#cpmuselocalpackages[CPM_USE_LOCAL_PACKAGES] wil enable `find_package` for all CPM dependencies.
+
+== Options
+More than the difference between `FetchContent` and `CPM`, you can use several variables and change it how you want, here are they:
+
+=== CPM_SOURCE_CACHE
+In order to avoid re-downloading dependencies, CPM has an option `CPM_SOURCE_CACHE` that can be passed to CMake as `-DCPM_SOURCE_CACHE=<path_to_external_download_directory>`. This will also allow projects to be configured offline, as long as the dependencies have been added to the cache before. It also may be defined system-wide as an envitonmental variable, e.g. by exporting `CPM_SOURCE_CACHE` in your `.bashrc` or `.bash_profile` like this:
+
+```bash
+export CPM_SOURCE_CACHE=$HOME/.cache/CPM
+```
+
+NOTE: Note that passing the variable as a configure option to `CMake` will always override the value set by the environmental variable.
+
+You can also use `CPM_SOURCE_CACHE` on GitHub action workflows link:https://github.com/actions/cache[cache] and combine it with ccache, the make you CI faster. See the link:https://github.com/cpm-cmake/CPM.cmake/wiki/Caching-with-CPM.cmake-and-ccache-on-GitHub-Actions[wiki] for more information.
+
+The directory where the version for a project is stored is by default the hash of the argument to `CPMAddPackage()`. If for instance the patch command uses external files, the directory name can be set with the argument `CACHE_CUSTOM_KEY`.
+
+=== CPM_DOWNLOAD_ALL
+If set, CPM will forward all calls to `CPMFindPackage`. This is useful to create reproducible builds or to determine if the source parameters have all been set correctly. This can also be set as an environmental variables. This can be controlled on a per package basis with the `CPM_DOWNLOAD_<dependency_name>` variable.
+
+=== CPM_USE_LOCAL_PACKAGE
+CPM can be configured to use `find_package` to search or locally installed dependencies first by setting the CMake option `CPM_USE_LOCAL_PACKAGES`.
+
+NOTE: If the option `CPM_LOCAL_PACKAGES_ONLY` is set, CPM will emit an error if the dependency is not found locally. These options can also be set as environmental variables.
+
+In the case that `find_package` requires additional arguments, the parameter `FIND_PACKAGE_ARGUMENTS` may be specified in the `CPMAddPackage` call. The value of this parameter will be forwarded to `find_package`.
+
+NOTE: that this does not apply to dependencies that have been defined with a truthy `FORCE` parameter. These will be added as defined.
+
+=== CPM_DONT_UPDATE_MODULE_PATH
+By default, CPM will override any `find_package` commands to use the CPM downloaded version. This is equivalent to the `OVERRIDE_FIND_PACKAGE` FetchContent option, which has no effect in CPM. In order to disable this behaviour, set the `CPM_DONT_UPDATE_MODULE_PATH` option. This will not work for `find_package(CONFIG)` in CMake version before 3.24.
+
+=== CPM_USE_NAMED_CACHE_DIRECTORIES
+If set, CPM use additional directory level in cache to improve readability of packages names in IDEs like CLion. It changes cache structure, so all dependencies are downloaded again. These is no problem to mix both structures in one cache directory but then there may be 2 copies of some dependencies. This can also be set as an environmental variable.
+
+== Local package override
+Library developers are often in the situation where they work on a locally checked out dependency at the same time as on a consumer project. It is possible to override the consumer's dependency with the version by supplying the CMake option `CPM_<dependency_name>_SOURCE` set to the absolute path of the local library. For instance, to use the local version of the dependency `Dep` at the path `/path/to/dep`, the consumer can be built with the following command:
+
+```shell
+$ cmake -Bbuild -DCPM_Dep_SOURCE=/path/to/dep
+```
+
+== Package loc
+In a large projects with many transitive dependencies, it can be useful to introduce a package lock file. This will list all CPM dependencies and can be used to update dependencies without modifying the original `CMakeLists.txt`.
+
+NOTE: In order to use a package lock, add the following line directly after including `CPM.cmake`:
+
+```cmake
+CPMUsesPackageLock(package-lock.cmake)
+```
+
+NOTE: In order to create or update the package lock file, build the `cpm-update-package-lock` target:
+
+```bash
+$ cmake -B build
+$ cmake --build build --target cpm-update-package-lock
+```
+
+For more information, look at the link:https://github.com/cpm-cmake/CPM.cmake/wiki/Package-lock[wiki].
+
+== Private repositories and CI
+
+When using CPM.cmake with private repositorie, there may be a need to provide an link:https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens[access token] to be able to clone other projects. Instead of providing the token in CMake, we recommend to provide the regular URL and use link:https://git-scm.com/docs/git-config[git-config] to rewrite the URLs to include the token.
+
+As an example, you could include one of the following in our CI script.
+
+=== Token using github
+```bash
+$ git config --global url."https://${USERNAME}:${TOKEN}@github.com".insteadOf "https://github.com"
+```
+
+=== Token using gitlab
+```bash
+$ git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com".insteadOf "https://gitlab.com"
+```
